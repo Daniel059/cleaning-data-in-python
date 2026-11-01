@@ -1,0 +1,11 @@
+order_id,shop,county,amount,quantity,payment_code,postal_code
+1001,Kibera Fresh Produce,Nairobi,"KES 1,250",5,1,00100
+1002,Mombasa Spice House,Mombasa,"KES 3,400",2,2,80100
+1003,Kisumu Fish Hub,Kisumu,"KES 780",10,0,40100
+1004,Nakuru Dairy Co,Nakuru,"KES 12,900",8,1,20100
+1005,Eldoret Grain Store,Uasin Gishu,"KES 5,600",4,3,30100
+1006,Thika Hardware,Kiambu,"KES 2,150",3,1,01000
+1007,Machakos Tailors,Machakos,"KES 940",6,0,90100
+1008,Nyeri Coffee Roasters,Nyeri,"KES 8,300",7,2,10100
+1009,Kibera Fresh Produce,Nairobi,"KES 610",2,1,00100
+1010,Kisumu Fish Hub,Kisumu,"KES 4,070",9,1,40100
