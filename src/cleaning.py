@@ -21,3 +21,17 @@ def clean_currency(series: pd.Series, prefix: str = "KES") -> pd.Series:
     if (numbers % 1 == 0).all():
         return numbers.astype("int64")
     return numbers.astype("float64")
+
+
+
+def to_category(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    """Return a copy of ``df`` with ``columns`` converted to the category dtype."""
+    out = df.copy()
+    for col in columns:
+        out[col] = out[col].astype("category")
+    return out
+
+
+def label_codes(series: pd.Series, mapping: dict[int, str]) -> pd.Series:
+    """Replace numeric codes with readable labels and store them as categories."""
+    return series.map(mapping).astype("category")
