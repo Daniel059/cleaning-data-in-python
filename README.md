@@ -1,0 +1,255 @@
+# Cleaning Data in Python: Common Data Problems
+
+Hands-on notes and runnable code for **Chapter 1** of DataCamp's *Cleaning Data in Python* course, starting with the lesson on **data type constraints**. Instead of reusing the course datasets, every example here uses an original, Kenyan-flavoured sales dataset, so the ideas have to be understood and not just copied.
+
+> **Garbage in, garbage out.** If a column has the wrong data type, every sum, average and chart built on it is quietly wrong.
+
+## What you'll learn
+
+- How to **diagnose** column types with `dtypes` and `info()`
+- Why summing a text column glues strings together instead of adding numbers
+- How to convert text like `"KES 1,250"` into real numbers
+- Why codes like `payment_code = 1` should be **categories**, not integers
+- Why postal codes should stay as **text**
+
+## Project structure
+
+```
+cleaning-data-in-python/
+├── data/
+│   └── mpesa_sales.csv              # 10 sample orders with deliberate type problems
+├── src/
+│   └── cleaning.py                  # reusable cleaning functions
+├── lessons/
+│   ├── 01_diagnose_types.py
+│   ├── 02_strings_to_numbers.py
+│   ├── 03_numeric_to_categorical.py
+│   └── 04_assert_checks.py          # write-up and tests coming soon
+├── tests/                           # pytest suite coming soon
+├── requirements.txt
+└── README.md
+```
+
+## Getting started
+
+```bash
+git clone https://github.com/Daniel059/cleaning-data-in-python.git
+cd cleaning-data-in-python
+
+python -m venv .venv
+source .venv/Scripts/activate    # Git Bash on Windows
+# source .venv/bin/activate      # macOS / Linux / WSL
+
+pip install -r requirements.txt
+
+python lessons/01_diagnose_types.py
+```
+
+> **Note:** pandas 3.x displays text columns as `str`, while pandas 2.x shows `object`. They mean the same thing here.
+
+## The dataset
+
+`data/mpesa_sales.csv` is a small, made-up set of shop orders. It is deliberately dirty:
+
+| Column | Example | Problem |
+|---|---|---|
+| `amount` | `KES 1,250` | The currency label and comma make it text |
+| `payment_code` | `1` | Looks numeric, but it's a category (0 Cash, 1 M-Pesa, 2 Card, 3 Credit) |
+| `postal_code` | `00100` | Loses its leading zeros if read as a number |
+
+## Lesson 1: Diagnose the types
+
+The first thing to do with any dataset is ask pandas what it thinks each column is.
+
+```python
+import pandas as pd
+
+sales = pd.read_csv("data/mpesa_sales.csv")
+print(sales.dtypes)
+```
+
+```
+order_id        int64
+shop              str
+county            str
+amount            str
+quantity        int64
+payment_code    int64
+postal_code     int64
+```
+
+`amount` is text, `payment_code` is a label stored as a number, and `postal_code` has already been damaged:
+
+```python
+print(sales["postal_code"].head(3).tolist())
+# [100, 80100, 40100]        <- Nairobi's 00100 became 100
+
+as_text = pd.read_csv("data/mpesa_sales.csv", dtype={"postal_code": str})
+print(as_text["postal_code"].head(3).tolist())
+# ['00100', '80100', '40100']
+```
+
+**Rule of thumb:** if you wouldn't do arithmetic on it, don't store it as a number. IDs, phone numbers and postal codes are labels, not quantities.
+
+### The classic trap
+
+```python
+print(sales["amount"].head(3).sum())
+# KES 1,250KES 3,400KES 780
+```
+
+Python "adds" strings by joining them. There is no error, just a wrong answer.
+
+## Lesson 2: Strings to numbers
+
+The recipe is **strip the noise, convert, verify**:
+
+```python
+amount = sales["amount"].str.replace("KES ", "", regex=False)   # 1. remove the label
+amount = amount.str.replace(",", "", regex=False)               # 2. remove thousands separators
+amount = amount.astype("int")                                   # 3. convert
+
+assert amount.dtype == "int64"                                  # 4. prove it
+```
+
+Order matters. Converting first fails:
+
+```
+ValueError: invalid literal for int() with base 10: 'KES 1,250'
+```
+
+The same logic is packaged as a reusable function in `src/cleaning.py`:
+
+```python
+from src.cleaning import clean_currency
+
+sales["amount"] = clean_currency(sales["amount"])
+print(f"Total revenue: KES {sales['amount'].sum():,}")
+# Total revenue: KES 40,000
+```
+
+Now real analysis works:
+
+```python
+print(sales.groupby("county")["amount"].sum().sort_values(ascending=False).head(3))
+```
+
+```
+county
+Nakuru         12900
+Nyeri           8300
+Uasin Gishu     5600
+```
+
+### `strip()` vs `replace()`
+
+| Method | Removes characters from | Good for |
+|---|---|---|
+| `.str.strip("$")` | the **ends** of a string only | `"$45"`, `"45$"` |
+| `.str.replace(",", "")` | **anywhere** in the string | `"1,250"`, `"KES 1,250"` |
+
+### When the data is messier than expected
+
+By default, `pd.to_numeric` raises an error on values it can't parse, so bad data gets noticed:
+
+```
+ValueError: Unable to parse string 'pending' at position 1
+```
+
+If you want to *find* the bad rows instead, use `errors="coerce"`, which turns them into `NaN`:
+
+```python
+pd.to_numeric(pd.Series(["500", "n/a", "1200", "pending"]), errors="coerce")
+```
+
+```
+0     500.0
+1       NaN
+2    1200.0
+3       NaN
+dtype: float64
+```
+
+The result is `float64` because an integer column can't hold `NaN`. Use `coerce` to locate the problems, then decide what to do with them. Don't let it hide them.
+
+## Lesson 3: Numeric or categorical?
+
+`payment_code` is stored as an integer, so pandas will happily compute an "average payment method":
+
+```python
+print(sales["payment_code"].describe())
+```
+
+```
+count    10.000000
+mean      1.200000      <- meaningless
+std       0.918937      <- meaningless
+min       0.000000
+max       3.000000
+```
+
+Convert it to a category and `describe()` switches to summaries that make sense:
+
+```python
+sales["payment_code"] = sales["payment_code"].astype("category")
+print(sales["payment_code"].describe())
+```
+
+```
+count     10
+unique     4
+top        1
+freq       5
+```
+
+Code `1` is the most common, appearing in 5 of 10 orders. Better still, replace the codes with readable labels:
+
+```python
+from src.cleaning import label_codes
+
+PAYMENT_LABELS = {0: "Cash", 1: "M-Pesa", 2: "Card", 3: "Credit"}
+sales["payment_method"] = label_codes(sales["payment_code"], PAYMENT_LABELS)
+
+print(sales["payment_method"].value_counts())
+```
+
+```
+payment_method
+M-Pesa    5
+Card      2
+Cash      2
+Credit    1
+```
+
+## Cheat sheet
+
+| Task | Code |
+|---|---|
+| Check types | `df.dtypes` / `df.info()` |
+| Force a type while loading | `pd.read_csv(path, dtype={"postal_code": str})` |
+| Remove edge characters | `s.str.strip("$")` |
+| Remove characters anywhere | `s.str.replace(",", "", regex=False)` |
+| Convert type | `s.astype("int")` / `"float"` / `"category"` |
+| Convert, tolerating bad values | `pd.to_numeric(s, errors="coerce")` |
+| Verify | `assert df["col"].dtype == "int64"` |
+
+## Common mistakes
+
+1. **Converting before cleaning.** `astype("int")` fails on `"1,250"`.
+2. **Treating IDs as numbers.** You lose leading zeros and can accidentally average them.
+3. **Using `coerce` blindly.** Failed conversions become `NaN` without warning, so count them afterwards with `cleaned.isna().sum()`.
+4. **Expecting `astype("int")` to work with missing values.** It fails on `NaN`. Use `"Int64"` (capital I) for nullable integers.
+
+## Roadmap
+
+- [x] Lesson 1: Diagnosing data types
+- [x] Lesson 2: Strings to numbers
+- [x] Lesson 3: Numeric vs categorical
+- [ ] Lesson 4: Using `assert` to verify cleaning
+- [ ] Tests with pytest
+- [ ] Data range constraints (impossible values, future dates)
+- [ ] Uniqueness constraints (finding and treating duplicates)
+
+## Acknowledgements
+
+Concepts follow DataCamp's *Cleaning Data in Python* course. All code, data and examples in this repo are original.

@@ -35,3 +35,10 @@ def to_category(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
 def label_codes(series: pd.Series, mapping: dict[int, str]) -> pd.Series:
     """Replace numeric codes with readable labels and store them as categories."""
     return series.map(mapping).astype("category")
+
+
+
+def assert_dtype(df: pd.DataFrame, column: str, expected: str) -> None:
+    """Fail loudly if ``column`` does not have the ``expected`` dtype."""
+    actual = str(df[column].dtype)
+    assert actual == expected, f"{column!r} is {actual}, expected {expected}"
