@@ -4,6 +4,27 @@ Hands-on notes and runnable code for **Chapter 1** of DataCamp's *Cleaning Data 
 
 > **Garbage in, garbage out.** If a column has the wrong data type, every sum, average and chart built on it is quietly wrong.
 
+## Contents
+
+- [Cleaning Data in Python: Common Data Problems](#cleaning-data-in-python-common-data-problems)
+  - [Contents](#contents)
+  - [What you'll learn](#what-youll-learn)
+  - [Project structure](#project-structure)
+  - [Getting started](#getting-started)
+  - [The dataset](#the-dataset)
+  - [Lesson 1: Diagnose the types](#lesson-1-diagnose-the-types)
+    - [The classic trap](#the-classic-trap)
+  - [Lesson 2: Strings to numbers](#lesson-2-strings-to-numbers)
+    - [`strip()` vs `replace()`](#strip-vs-replace)
+    - [When the data is messier than expected](#when-the-data-is-messier-than-expected)
+  - [Lesson 3: Numeric or categorical?](#lesson-3-numeric-or-categorical)
+  - [Lesson 4: Prove it with `assert`](#lesson-4-prove-it-with-assert)
+  - [Running the tests](#running-the-tests)
+  - [Cheat sheet](#cheat-sheet)
+  - [Common mistakes](#common-mistakes)
+  - [Roadmap](#roadmap)
+  - [Acknowledgements](#acknowledgements)
+
 ## What you'll learn
 
 - How to **diagnose** column types with `dtypes` and `info()`
@@ -11,6 +32,8 @@ Hands-on notes and runnable code for **Chapter 1** of DataCamp's *Cleaning Data 
 - How to convert text like `"KES 1,250"` into real numbers
 - Why codes like `payment_code = 1` should be **categories**, not integers
 - Why postal codes should stay as **text**
+- How to use `assert` to prove your cleaning worked
+- How to test cleaning functions with `pytest`
 
 ## Project structure
 
@@ -19,13 +42,17 @@ cleaning-data-in-python/
 ├── data/
 │   └── mpesa_sales.csv              # 10 sample orders with deliberate type problems
 ├── src/
+│   ├── __init__.py
 │   └── cleaning.py                  # reusable cleaning functions
 ├── lessons/
 │   ├── 01_diagnose_types.py
 │   ├── 02_strings_to_numbers.py
 │   ├── 03_numeric_to_categorical.py
-│   └── 04_assert_checks.py          # write-up and tests coming soon
-├── tests/                           # pytest suite coming soon
+│   └── 04_assert_checks.py
+├── tests/
+│   ├── __init__.py
+│   └── test_cleaning.py             # pytest suite for src/cleaning.py
+├── .gitignore
 ├── requirements.txt
 └── README.md
 ```
@@ -41,11 +68,20 @@ source .venv/Scripts/activate    # Git Bash on Windows
 # source .venv/bin/activate      # macOS / Linux / WSL
 
 pip install -r requirements.txt
-
-python lessons/01_diagnose_types.py
 ```
 
-> **Note:** pandas 3.x displays text columns as `str`, while pandas 2.x shows `object`. They mean the same thing here.
+Run any lesson from the project root:
+
+```bash
+python lessons/01_diagnose_types.py
+python lessons/02_strings_to_numbers.py
+python lessons/03_numeric_to_categorical.py
+python lessons/04_assert_checks.py
+```
+
+> **Tip:** the virtual environment only stays active in the terminal where you activated it. If you see `No module named pandas` or `No module named pytest`, activate `.venv` again.
+>
+> **Note:** pandas 3.x displays text columns as `str`, while pandas 2.x shows `object`. They mean the same thing in this project.
 
 ## The dataset
 
@@ -56,6 +92,8 @@ python lessons/01_diagnose_types.py
 | `amount` | `KES 1,250` | The currency label and comma make it text |
 | `payment_code` | `1` | Looks numeric, but it's a category (0 Cash, 1 M-Pesa, 2 Card, 3 Credit) |
 | `postal_code` | `00100` | Loses its leading zeros if read as a number |
+
+The amounts in the CSV are wrapped in quotes (`"KES 1,250"`) because they contain a comma. Without the quotes, the comma would split the value into two columns.
 
 ## Lesson 1: Diagnose the types
 
@@ -221,6 +259,67 @@ Cash      2
 Credit    1
 ```
 
+## Lesson 4: Prove it with `assert`
+
+`assert` stays silent when a condition is true and raises `AssertionError` when it is false.
+
+```python
+assert 1 + 1 == 2     # nothing happens
+assert 1 + 1 == 3     # AssertionError
+```
+
+Use it as a safety net after cleaning. `assert_dtype` in `src/cleaning.py` wraps the idea in a helper with a readable error message:
+
+```python
+from src.cleaning import assert_dtype
+
+assert_dtype(sales, "amount", "int64")            # passes only after cleaning
+assert sales["amount"].min() > 0, "amounts must be positive"
+```
+
+Before cleaning, the same check fails and tells you exactly what's wrong:
+
+```
+Before cleaning -> 'amount' is object, expected int64
+```
+
+After cleaning:
+
+```
+After cleaning -> all checks passed
+```
+
+Checking types is only half the job. The `min() > 0` line checks the *values*, because a column can have the right type and still hold nonsense.
+
+## Running the tests
+
+```bash
+python -m pytest -v
+```
+
+The suite has 7 tests covering:
+
+- integer and decimal currency conversion
+- rejecting garbage values like `"pending"`
+- the string-concatenation trap
+- category conversion (without changing the original DataFrame)
+- code-to-label mapping
+- the dtype assertion helper catching a mismatch
+
+```
+tests/test_cleaning.py::test_clean_currency_returns_ints PASSED
+tests/test_cleaning.py::test_clean_currency_handles_decimals PASSED
+tests/test_cleaning.py::test_clean_currency_rejects_garbage PASSED
+tests/test_cleaning.py::test_sum_of_raw_strings_concatenates PASSED
+tests/test_cleaning.py::test_to_category_does_not_mutate_input PASSED
+tests/test_cleaning.py::test_label_codes PASSED
+tests/test_cleaning.py::test_assert_dtype_fails_on_mismatch PASSED
+
+7 passed
+```
+
+Errors are tested too. `pytest.raises(...)` makes a test pass only if the expected error occurs, which is how you prove a safety check actually catches bad input.
+
 ## Cheat sheet
 
 | Task | Code |
@@ -231,7 +330,9 @@ Credit    1
 | Remove characters anywhere | `s.str.replace(",", "", regex=False)` |
 | Convert type | `s.astype("int")` / `"float"` / `"category"` |
 | Convert, tolerating bad values | `pd.to_numeric(s, errors="coerce")` |
-| Verify | `assert df["col"].dtype == "int64"` |
+| Verify a type | `assert df["col"].dtype == "int64"` |
+| Verify with a clear message | `assert_dtype(df, "col", "int64")` |
+| Run the tests | `python -m pytest -v` |
 
 ## Common mistakes
 
@@ -239,14 +340,15 @@ Credit    1
 2. **Treating IDs as numbers.** You lose leading zeros and can accidentally average them.
 3. **Using `coerce` blindly.** Failed conversions become `NaN` without warning, so count them afterwards with `cleaned.isna().sum()`.
 4. **Expecting `astype("int")` to work with missing values.** It fails on `NaN`. Use `"Int64"` (capital I) for nullable integers.
+5. **Writing checks that never fail.** A safety net you haven't seen fail might not be catching anything. Test the failing case too.
 
 ## Roadmap
 
 - [x] Lesson 1: Diagnosing data types
 - [x] Lesson 2: Strings to numbers
 - [x] Lesson 3: Numeric vs categorical
-- [ ] Lesson 4: Using `assert` to verify cleaning
-- [ ] Tests with pytest
+- [x] Lesson 4: Using `assert` to verify cleaning
+- [x] Tests with pytest
 - [ ] Data range constraints (impossible values, future dates)
 - [ ] Uniqueness constraints (finding and treating duplicates)
 
